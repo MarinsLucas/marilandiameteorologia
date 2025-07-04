@@ -19,10 +19,10 @@ import { app } from "@/lib/firebaseConfig";
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
 interface DadoHistorico {
-  data: string;
+  timestamp: string;
   temperatura: number;
   umidade: number;
-  pressao: number;
+  velocidade: number;
 }
 
 interface DadoDiario {
@@ -33,9 +33,9 @@ interface DadoDiario {
   umidMax: number;
   umidMin: number;
   umidMedia: number;
-  pressMax: number;
-  pressMin: number;
-  pressMedia: number;
+  velMax: number;
+  velMin: number;
+  velMedia: number;
 }
 
 export default function HistoricoPage() {
@@ -47,28 +47,28 @@ export default function HistoricoPage() {
 
 
   function calcularAgregadoDoDia(dia: string, registros: DadoHistorico[]): DadoDiario {
-    const getValidos = (campo: keyof DadoHistorico) =>
-      registros
-        .map((r) => Number(r[campo]))
-        .filter((v) => !isNaN(v) && v !== -404);
+  const getValidos = (campo: keyof DadoHistorico) =>
+    registros
+      .map((r) => Number(r[campo]))
+      .filter((v) => !isNaN(v) && v !== -404);
 
-    const temp = getValidos("temperatura");
-    const umid = getValidos("umidade");
-    const press = getValidos("pressao");
+  const temp = getValidos("temperatura");
+  const umid = getValidos("umidade");
+  const vel = getValidos("velocidade");  // mudou
 
-    return {
-      dia,
-      tempMax: temp.length ? Math.max(...temp) : -404,
-      tempMin: temp.length ? Math.min(...temp) : -404,
-      tempMedia: temp.length ? temp.reduce((a, b) => a + b, 0) / temp.length : -404,
-      umidMax: umid.length ? Math.max(...umid) : -404,
-      umidMin: umid.length ? Math.min(...umid) : -404,
-      umidMedia: umid.length ? umid.reduce((a, b) => a + b, 0) / umid.length : -404,
-      pressMax: press.length ? Math.max(...press) : -404,
-      pressMin: press.length ? Math.min(...press) : -404,
-      pressMedia: press.length ? press.reduce((a, b) => a + b, 0) / press.length : -404,
-    };
-  }
+  return {
+    dia,
+    tempMax: temp.length ? Math.max(...temp) : -404,
+    tempMin: temp.length ? Math.min(...temp) : -404,
+    tempMedia: temp.length ? temp.reduce((a, b) => a + b, 0) / temp.length : -404,
+    umidMax: umid.length ? Math.max(...umid) : -404,
+    umidMin: umid.length ? Math.min(...umid) : -404,
+    umidMedia: umid.length ? umid.reduce((a, b) => a + b, 0) / umid.length : -404,
+    velMax: vel.length ? Math.max(...vel) : -404,        // mudou
+    velMin: vel.length ? Math.min(...vel) : -404,        // mudou
+    velMedia: vel.length ? vel.reduce((a, b) => a + b, 0) / vel.length : -404,  // mudou
+  };
+}
 
   async function buscarDados() {
     if (!dataInicio || !dataFim) return;
@@ -88,8 +88,10 @@ export default function HistoricoPage() {
 
 
       const dias: string[] = [];
-      for (let d = new Date(dataInicioObj); d <= dataFimObj; d.setDate(d.getDate() + 1)) {
+      let d = new Date(dataInicioObj.getTime()); // cria uma cópia segura
+      while (d <= dataFimObj) {
         dias.push(d.toISOString().split("T")[0]);
+        d.setDate(d.getDate() + 1);
       }
 
       const dadosDiarios: DadoDiario[] = [];
@@ -109,15 +111,19 @@ export default function HistoricoPage() {
 
           for (const key in todosDados) {
             const registro = todosDados[key];
-            const dataRegistro = new Date(registro.Data);
+
+            const timestampMs = Number(key);
+            if (isNaN(timestampMs)) continue;
+
+            const dataRegistro = new Date(timestampMs);
             const diaRegistro = dataRegistro.toISOString().split("T")[0];
 
             if (diaRegistro === dia) {
               registrosDia.push({
-                data: registro.Data,
+                timestamp: new Date(timestampMs).toISOString(),
                 temperatura: registro.Temperatura,
                 umidade: registro.Umidade,
-                pressao: registro.Pressao,
+                velocidade: registro.Velocidade,
               });
             }
           }
@@ -139,16 +145,16 @@ export default function HistoricoPage() {
       setDadosHistorico(
         dadosDiarios.flatMap((d) => [
           {
-            data: d.dia + "T12:00:00",
+            timestamp: d.dia + "T12:00:00",  // renomeado data -> timestamp
             temperatura: d.tempMax,
             umidade: d.umidMax,
-            pressao: d.pressMax,
+            velocidade: d.velMax,          // trocado de pressao para velocidade
           },
           {
-            data: d.dia + "T12:00:00",
+            timestamp: d.dia + "T12:00:00",
             temperatura: d.tempMin,
             umidade: d.umidMin,
-            pressao: d.pressMin,
+            velocidade: d.velMin,
           },
         ])
       );
@@ -167,7 +173,7 @@ export default function HistoricoPage() {
     const grupos: Record<string, DadoHistorico[]> = {};
 
     dados.forEach((dado) => {
-      const dt = new Date(dado.data);
+      const dt = new Date(dado.timestamp);  // renomeado
       const diaFormatado = dt.toISOString().split("T")[0];
       if (!grupos[diaFormatado]) grupos[diaFormatado] = [];
       grupos[diaFormatado].push(dado);
@@ -181,7 +187,7 @@ export default function HistoricoPage() {
 
       const temp = getValidos("temperatura");
       const umid = getValidos("umidade");
-      const press = getValidos("pressao");
+      const vel = getValidos("velocidade");  // mudado
 
       return {
         dia,
@@ -191,39 +197,51 @@ export default function HistoricoPage() {
         umidMax: umid.length ? Math.max(...umid) : -404,
         umidMin: umid.length ? Math.min(...umid) : -404,
         umidMedia: umid.length ? umid.reduce((a, b) => a + b, 0) / umid.length : -404,
-        pressMax: press.length ? Math.max(...press) : -404,
-        pressMin: press.length ? Math.min(...press) : -404,
-        pressMedia: press.length ? press.reduce((a, b) => a + b, 0) / press.length : -404,
+        velMax: vel.length ? Math.max(...vel) : -404,
+        velMin: vel.length ? Math.min(...vel) : -404,
+        velMedia: vel.length ? vel.reduce((a, b) => a + b, 0) / vel.length : -404,
       };
     });
   }
 
   const dadosDiarios = agruparPorDia(dadosHistorico);
 
-  function gerarDataset(tipo: "temp" | "umid" | "press", maxMin: "max" | "min") {
+  function gerarDataset(tipo: "temp" | "umid" | "vel", valor: "max" | "min" | "media") {
     const nome =
-      tipo === "temp" ? "Temperatura" : tipo === "umid" ? "Umidade" : "Pressão";
-    const unidade = tipo === "temp" ? "°C" : tipo === "umid" ? "%" : "hPa";
-    const chave = `${tipo}${maxMin === "max" ? "Max" : "Min"}` as keyof DadoDiario;
+      tipo === "temp" ? "Temperatura" : tipo === "umid" ? "Umidade" : "Velocidade do Vento";
+    const unidade = tipo === "temp" ? "°C" : tipo === "umid" ? "%" : "m/s";
+
+    const chave = `${tipo}${
+      valor === "max" ? "Max" : valor === "min" ? "Min" : "Media"
+    }` as keyof DadoDiario;
+
+    const labelSuffix = valor === "max" ? "Máxima" : valor === "min" ? "Mínima" : "Média";
 
     const cores: Record<string, [string, string]> = {
       tempMax: ["red", "rgba(255,0,0,0.1)"],
       tempMin: ["orange", "rgba(255,165,0,0.1)"],
+      tempMedia: ["darkred", "rgba(139,0,0,0.1)"],
+
       umidMax: ["blue", "rgba(0,0,255,0.1)"],
       umidMin: ["lightblue", "rgba(173,216,230,0.1)"],
-      pressMax: ["green", "rgba(0,128,0,0.1)"],
-      pressMin: ["lightgreen", "rgba(144,238,144,0.1)"],
+      umidMedia: ["navy", "rgba(0,0,128,0.1)"],
+
+      velMax: ["green", "rgba(0,128,0,0.1)"],
+      velMin: ["lightgreen", "rgba(144,238,144,0.1)"],
+      velMedia: ["darkgreen", "rgba(0,100,0,0.1)"],
     };
 
     const [borderColor, backgroundColor] = cores[chave] || ["black", "rgba(0,0,0,0.1)"];
 
     return {
-      label: `${nome} ${maxMin === "max" ? "Máxima" : "Mínima"} (${unidade})`,
+      label: `${nome} ${labelSuffix} (${unidade})`,
       data: dadosDiarios.map((d) => d[chave] as number),
       borderColor,
       backgroundColor,
     };
   }
+
+
 
   return (
     <div className="min-h-screen bg-yellow-40f0 text-black p-6 flex flex-col items-center">
@@ -291,6 +309,7 @@ export default function HistoricoPage() {
                 datasets: [
                   gerarDataset("temp", "max"),
                   gerarDataset("temp", "min"),
+                  gerarDataset("temp", "media"),
                 ],
               }}
             />
@@ -305,20 +324,22 @@ export default function HistoricoPage() {
                 datasets: [
                   gerarDataset("umid", "max"),
                   gerarDataset("umid", "min"),
+                  gerarDataset("umid", "media"),
                 ],
               }}
             />
           </div>
 
-          {/* Pressão */}
+          {/* Velocidade do Vento */}
           <div className="bg-white p-6 rounded-lg shadow w-full aspect-w-16 aspect-h-9">
-            <h2 className="text-lg font-semibold text-center mb-2">Pressão Máxima e Mínima</h2>
+            <h2 className="text-lg font-semibold text-center mb-2">Velocidade do Vento Máxima e Mínima</h2>
             <Line
               data={{
                 labels: dadosDiarios.map((d) => d.dia),
                 datasets: [
-                  gerarDataset("press", "max"),
-                  gerarDataset("press", "min"),
+                  gerarDataset("vel", "max"),
+                  gerarDataset("vel", "min"),
+                  gerarDataset("vel", "media"),
                 ],
               }}
             />

@@ -3,25 +3,21 @@ import { getDatabase, ref, get, child } from "firebase/database";
 import { app } from "../lib/firebaseConfig"; // inicializa o app Firebase
 
 type WeatherData = {
-  Data: string;
+  timestamp: string;
   Luminosidade: number;
   Temperatura: number;
-  Pressao: number;
   Umidade: number;
   Velocidade: number;
-  temperatura_bmp280: number;
   Chuva: number;
-  rssi: string;
-  endereco: string;
+  RSSI: string;
+  PacotesPerdidos: string;
 };
 
 interface DadosMeteorologicos {
   temperatura: number;
   umidade: number;
   velocidade: number;
-  direcao: string;
   luminosidade: number;
-  pressao: number;
   chuva: number;
   data: string;
 }
@@ -36,7 +32,7 @@ export default async function AgoraPage() {
 
   // Obtem o último dado pela ordenação das chaves
   const dataObj = snapshot.val();
-  const chaves = Object.keys(dataObj).sort().reverse(); // último por ordem de inserção
+  const chaves = Object.keys(dataObj).sort((a, b) => Number(b) - Number(a));
   const ultimoDadoKey = chaves[0];
   const weatherData = dataObj[ultimoDadoKey] as WeatherData;
 
@@ -44,20 +40,18 @@ export default async function AgoraPage() {
     temperatura: weatherData.Temperatura,
     umidade: weatherData.Umidade,
     velocidade: weatherData.Velocidade,
-    direcao: weatherData.endereco,
     luminosidade: weatherData.Luminosidade,
-    pressao: weatherData.Pressao,
     chuva: weatherData.Chuva,
-    data: weatherData.Data,
+    data: weatherData.timestamp,
   };
+
+  console.log("Dados do Firebase:", dados);
 
   const {
     temperatura,
     umidade,
     velocidade,
-    direcao,
     luminosidade,
-    pressao,
     chuva,
     data,
   } = dados;
@@ -141,10 +135,6 @@ export default async function AgoraPage() {
           <div>
             <h3 className="text-lg font-semibold">🌙 Luminosidade</h3>
             <p className="text-2xl">{luminosidade} lux</p>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold">📈 Pressão</h3>
-            <p className="text-2xl">{pressao} hPa</p>
           </div>
           <div>
             <h3 className="text-lg font-semibold">🕒 Data da Medição</h3>
