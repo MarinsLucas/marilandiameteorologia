@@ -1,4 +1,19 @@
 import Link from "next/link";
+import { getDatabase, ref, get, child } from "firebase/database";
+import { app } from "../lib/firebaseConfig"; // inicializa o app Firebase
+
+type WeatherData = {
+  Data: string;
+  Luminosidade: number;
+  Temperatura: number;
+  Pressao: number;
+  Umidade: number;
+  Velocidade: number;
+  temperatura_bmp280: number;
+  Chuva: number;
+  rssi: string;
+  endereco: string;
+};
 
 interface DadosMeteorologicos {
   temperatura: number;
@@ -12,12 +27,29 @@ interface DadosMeteorologicos {
 }
 
 export default async function AgoraPage() {
-  const response = await fetch(
-    "https://script.google.com/macros/s/AKfycbwD9Iedii4r-M5QGcpHFAIvARaARuDrONIja0UhmLYvTI1IGBd0SlplFm5TgQbQ62wN/exec?leitura=ultima",
-    { cache: "no-store" }
-  );
+  const db = getDatabase(app);
+  const snapshot = await get(child(ref(db), "logs"));
 
-  const dados: DadosMeteorologicos = await response.json();
+  if (!snapshot.exists()) {
+    throw new Error("Nenhum dado encontrado.");
+  }
+
+  // Obtem o último dado pela ordenação das chaves
+  const dataObj = snapshot.val();
+  const chaves = Object.keys(dataObj).sort().reverse(); // último por ordem de inserção
+  const ultimoDadoKey = chaves[0];
+  const weatherData = dataObj[ultimoDadoKey] as WeatherData;
+
+  const dados: DadosMeteorologicos = {
+    temperatura: weatherData.Temperatura,
+    umidade: weatherData.Umidade,
+    velocidade: weatherData.Velocidade,
+    direcao: weatherData.endereco,
+    luminosidade: weatherData.Luminosidade,
+    pressao: weatherData.Pressao,
+    chuva: weatherData.Chuva,
+    data: weatherData.Data,
+  };
 
   const {
     temperatura,
@@ -31,10 +63,10 @@ export default async function AgoraPage() {
   } = dados;
 
   function luxEsperadoPorHora(hora: number): number {
-    const A = 6000; // pico máximo de lux
-    const inicioDia = 6; // 6h começa o ciclo
-    const fimDia = 18; // 19h termina o ciclo
-    const periodo = fimDia - inicioDia; // 12 horas
+    const A = 6000;
+    const inicioDia = 6;
+    const fimDia = 18;
+    const periodo = fimDia - inicioDia;
 
     if (hora < inicioDia || hora > fimDia) return 0;
 
@@ -50,9 +82,9 @@ export default async function AgoraPage() {
     const hora = new Date(data).getHours();
 
     if (chuva < 4000) return "Chuvoso";
-    if (hora >= 19 || hora < 6) return "De noite";
-    if (luminosidade < luxEsperadoPorHora(hora) / 2) return "Nublado";
-    if (luminosidade < luxEsperadoPorHora(hora) * 0.8)
+    if (hora >= 22 || hora < 8) return "De noite";
+    if (luminosidade < luxEsperadoPorHora(hora - 3) / 2) return "Nublado";
+    if (luminosidade < luxEsperadoPorHora(hora - 3) * 0.8)
       return "Parcialmente Nublado";
     return "Ensolarado";
   }
@@ -63,7 +95,7 @@ export default async function AgoraPage() {
     <div className="min-h-screen bg-purple-700 text-white p-6 flex flex-col items-center">
       {/* Cabeçalho */}
       <header className="w-full max-w-4xl flex justify-between items-center bg-purple-800 p-4 rounded-lg shadow-md mb-6">
-        <h1 className="text-2xl font-bold">1.3v</h1>
+        <h1 className="text-2xl font-bold">1.5v</h1>
         <nav className="flex gap-4">
           <Link
             href="/"
@@ -103,9 +135,8 @@ export default async function AgoraPage() {
             <p className="text-2xl">{umidade} %</p>
           </div>
           <div>
-            <h3 className="text-lg font-semibold">💨 Vento</h3>
+            <h3 className="text-lg font-semibold">💨 Vento </h3>
             <p className="text-2xl">{velocidade} m/s</p>
-            <p className="text-md">{direcao}</p>
           </div>
           <div>
             <h3 className="text-lg font-semibold">🌙 Luminosidade</h3>
@@ -117,7 +148,11 @@ export default async function AgoraPage() {
           </div>
           <div>
             <h3 className="text-lg font-semibold">🕒 Data da Medição</h3>
-            <p className="text-xl">{new Date(data).toLocaleString('pt-BR', {timeZone: 'America/Sao_Paulo'})}</p>
+            <p className="text-xl">
+              {new Date(data).toLocaleString("pt-BR", {
+                timeZone: "America/Sao_Paulo",
+              })}
+            </p>
           </div>
         </div>
       </div>
@@ -142,7 +177,9 @@ export default async function AgoraPage() {
         </div>
 
         <p className="text-md text-gray-700">
-          Previsão do tempo gerada através de modelagem computacional baseada em dados, logo, não é perfeita e pode conter erros! Gerada através de uma rede neural treinada com 500KB de dados. Tende a melhorar com o tempo.
+          Previsão do tempo gerada através de modelagem computacional baseada em
+          dados, logo, não é perfeita e pode conter erros! Gerada através de uma
+          rede neural treinada com 500KB de dados. Tende a melhorar com o tempo.
         </p>
       </section>
     </div>

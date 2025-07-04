@@ -13,6 +13,8 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import { getDatabase, ref, get, set } from "firebase/database";
+import { app } from "@/lib/firebaseConfig";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -41,25 +43,125 @@ export default function HistoricoPage() {
   const [dataFim, setDataFim] = useState("");
   const [dadosHistorico, setDadosHistorico] = useState<DadoHistorico[]>([]);
   const [mensagem, setMensagem] = useState("");
+  const [carregando, setCarregando] = useState(false);
+
+
+  function calcularAgregadoDoDia(dia: string, registros: DadoHistorico[]): DadoDiario {
+    const getValidos = (campo: keyof DadoHistorico) =>
+      registros
+        .map((r) => Number(r[campo]))
+        .filter((v) => !isNaN(v) && v !== -404);
+
+    const temp = getValidos("temperatura");
+    const umid = getValidos("umidade");
+    const press = getValidos("pressao");
+
+    return {
+      dia,
+      tempMax: temp.length ? Math.max(...temp) : -404,
+      tempMin: temp.length ? Math.min(...temp) : -404,
+      tempMedia: temp.length ? temp.reduce((a, b) => a + b, 0) / temp.length : -404,
+      umidMax: umid.length ? Math.max(...umid) : -404,
+      umidMin: umid.length ? Math.min(...umid) : -404,
+      umidMedia: umid.length ? umid.reduce((a, b) => a + b, 0) / umid.length : -404,
+      pressMax: press.length ? Math.max(...press) : -404,
+      pressMin: press.length ? Math.min(...press) : -404,
+      pressMedia: press.length ? press.reduce((a, b) => a + b, 0) / press.length : -404,
+    };
+  }
 
   async function buscarDados() {
     if (!dataInicio || !dataFim) return;
-
     setMensagem("");
+    setDadosHistorico([]);
 
-    const response = await fetch(
-      `https://script.google.com/macros/s/AKfycbwD9Iedii4r-M5QGcpHFAIvARaARuDrONIja0UhmLYvTI1IGBd0SlplFm5TgQbQ62wN/exec?leitura=intervalo&inicio=${dataInicio}&fim=${dataFim}`
-    );
-    const dados = await response.json();
+    setCarregando(true); // Início do carregamento
 
-    if (dados.length === 0) {
-      setMensagem("Nenhum dado encontrado para o intervalo selecionado.");
-    } else {
-      setMensagem("");
+    try {
+      const db = getDatabase(app);
+    const ontem = new Date();
+    ontem.setDate(ontem.getDate() - 1); // Um dia antes de hoje
+    ontem.setHours(23, 59, 59, 999); // Fim do dia    
+    const dataInicioObj = new Date(dataInicio);
+    const dataFimInput = new Date(dataFim + "T23:59:59");
+    const dataFimObj = dataFimInput > ontem ? ontem : dataFimInput; // Limita a hoje
+
+
+      const dias: string[] = [];
+      for (let d = new Date(dataInicioObj); d <= dataFimObj; d.setDate(d.getDate() + 1)) {
+        dias.push(d.toISOString().split("T")[0]);
+      }
+
+      const dadosDiarios: DadoDiario[] = [];
+
+      for (const dia of dias) {
+        const refHistorico = ref(db, `historicoDiario/${dia}`);
+        const snapHistorico = await get(refHistorico);
+
+        if (snapHistorico.exists()) {
+          dadosDiarios.push(snapHistorico.val());
+        } else {
+          const snapLogs = await get(ref(db, "logs"));
+          if (!snapLogs.exists()) continue;
+
+          const todosDados = snapLogs.val();
+          const registrosDia: DadoHistorico[] = [];
+
+          for (const key in todosDados) {
+            const registro = todosDados[key];
+            const dataRegistro = new Date(registro.Data);
+            const diaRegistro = dataRegistro.toISOString().split("T")[0];
+
+            if (diaRegistro === dia) {
+              registrosDia.push({
+                data: registro.Data,
+                temperatura: registro.Temperatura,
+                umidade: registro.Umidade,
+                pressao: registro.Pressao,
+              });
+            }
+          }
+
+          if (registrosDia.length > 0) {
+            const agregado = calcularAgregadoDoDia(dia, registrosDia);
+            dadosDiarios.push(agregado);
+
+            // Salva no histórico otimizado
+            await set(refHistorico, agregado);
+          }
+        }
+      }
+
+      if (dadosDiarios.length === 0) {
+        setMensagem("Nenhum dado encontrado no período selecionado.");
+      }
+
+      setDadosHistorico(
+        dadosDiarios.flatMap((d) => [
+          {
+            data: d.dia + "T12:00:00",
+            temperatura: d.tempMax,
+            umidade: d.umidMax,
+            pressao: d.pressMax,
+          },
+          {
+            data: d.dia + "T12:00:00",
+            temperatura: d.tempMin,
+            umidade: d.umidMin,
+            pressao: d.pressMin,
+          },
+        ])
+      );
+    } catch (error) {
+      console.error("Erro ao buscar dados:", error);
+      setMensagem("Erro ao buscar dados.");
     }
 
-    setDadosHistorico(dados);
+    setCarregando(false); // Início do carregamento
+
   }
+
+
 
   function agruparPorDia(dados: DadoHistorico[]): DadoDiario[] {
     const grupos: Record<string, DadoHistorico[]> = {};
@@ -74,8 +176,8 @@ export default function HistoricoPage() {
     return Object.entries(grupos).map(([dia, registros]) => {
       const getValidos = (campo: keyof DadoHistorico) =>
         registros
-          .map(r => Number(r[campo]))
-          .filter(v => !isNaN(v) && v !== -404);
+          .map((r) => Number(r[campo]))
+          .filter((v) => !isNaN(v) && v !== -404);
 
       const temp = getValidos("temperatura");
       const umid = getValidos("umidade");
@@ -96,13 +198,9 @@ export default function HistoricoPage() {
     });
   }
 
-
   const dadosDiarios = agruparPorDia(dadosHistorico);
 
-  function gerarDataset(
-    tipo: "temp" | "umid" | "press",
-    maxMin: "max" | "min"
-  ) {
+  function gerarDataset(tipo: "temp" | "umid" | "press", maxMin: "max" | "min") {
     const nome =
       tipo === "temp" ? "Temperatura" : tipo === "umid" ? "Umidade" : "Pressão";
     const unidade = tipo === "temp" ? "°C" : tipo === "umid" ? "%" : "hPa";
@@ -168,13 +266,15 @@ export default function HistoricoPage() {
           </div>
         </div>
 
-        <button
+       <button
           onClick={buscarDados}
-          className="mt-4 bg-purple-900 text-white px-4 py-2 rounded-lg shadow hover:bg-purple-700 transition"
+          disabled={carregando}
+          className={`mt-4 px-4 py-2 rounded-lg shadow transition ${
+            carregando ? "bg-gray-400 cursor-not-allowed" : "bg-purple-900 hover:bg-purple-700 text-white"
+          }`}
         >
-          Buscar Dados
+          {carregando ? "Carregando..." : "Buscar Dados"}
         </button>
-
         {mensagem && (
           <div className="mt-4 text-red-600 font-medium text-center">{mensagem}</div>
         )}
