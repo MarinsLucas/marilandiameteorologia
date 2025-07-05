@@ -22,6 +22,8 @@ interface DadosMeteorologicos {
   data: string;
 }
 
+export const dynamic = "force-dynamic";
+
 export default async function AgoraPage() {
   const db = getDatabase(app);
   const snapshot = await get(child(ref(db), "logs"));
