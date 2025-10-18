@@ -26,17 +26,16 @@ export const dynamic = "force-dynamic";
 
 export default async function AgoraPage() {
   const db = getDatabase(app);
-  const snapshot = await get(child(ref(db), "logs"));
+  // --- ÚNICA ALTERAÇÃO LÓGICA ESTÁ AQUI ---
+  // 1. O caminho foi mudado de "logs" para "leitura_atual"
+  const snapshot = await get(child(ref(db), "leitura_atual"));
 
   if (!snapshot.exists()) {
     throw new Error("Nenhum dado encontrado.");
   }
 
-  // Obtem o último dado pela ordenação das chaves
-  const dataObj = snapshot.val();
-  const chaves = Object.keys(dataObj).sort((a, b) => Number(b) - Number(a));
-  const ultimoDadoKey = chaves[0];
-  const weatherData = dataObj[ultimoDadoKey] as WeatherData;
+  // 2. A lógica para encontrar o último dado foi simplificada, pois agora pegamos o dado diretamente.
+  const weatherData = snapshot.val() as WeatherData;
 
   const dados: DadosMeteorologicos = {
     temperatura: weatherData.Temperatura,
@@ -91,7 +90,7 @@ export default async function AgoraPage() {
     <div className="min-h-screen bg-purple-700 text-white p-6 flex flex-col items-center">
       {/* Cabeçalho */}
       <header className="w-full max-w-4xl flex justify-between items-center bg-purple-800 p-4 rounded-lg shadow-md mb-6">
-        <h1 className="text-2xl font-bold">1.5v</h1>
+        <h1 className="text-2xl font-bold">1.6v</h1>
         <nav className="flex gap-4">
           <Link
             href="/"
@@ -177,3 +176,4 @@ export default async function AgoraPage() {
     </div>
   );
 }
+
