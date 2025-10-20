@@ -208,7 +208,7 @@ export default async function AgoraPage() {
 
        <footer className="w-full max-w-6xl text-center mt-8">
         <p className="text-xs text-slate-500">
-          Marilândia Meteorologia v1.8
+          Marilândia Meteorologia v1.9
         </p>
       </footer>
     </div>

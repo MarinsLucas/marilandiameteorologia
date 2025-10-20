@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -47,7 +47,6 @@ const formatDateForInput = (date: Date) => date.toISOString().split("T")[0];
 // --- Componente da Página ---
 export default function HistoricoPage() {
   // --- Estados ---
-  // Define as datas iniciais para que os inputs já comecem preenchidos, mas não busca os dados.
   const [dataInicio, setDataInicio] = useState(() => {
     const seteDiasAtras = new Date();
     seteDiasAtras.setDate(new Date().getDate() - 7);
@@ -57,7 +56,7 @@ export default function HistoricoPage() {
   
   const [dadosDiarios, setDadosDiarios] = useState<DadoDiario[]>([]);
   const [mensagem, setMensagem] = useState("Selecione um período e clique em 'Buscar' para ver os gráficos.");
-  const [carregando, setCarregando] = useState(false); // ALTERADO: Não inicia carregando
+  const [carregando, setCarregando] = useState(false);
 
   // --- Lógica de Busca e Processamento de Dados ---
   async function buscarDados(inicio: string, fim: string) {
@@ -78,7 +77,10 @@ export default function HistoricoPage() {
         dias.push(formatDateForInput(new Date(currentDate)));
         currentDate.setDate(currentDate.getDate() + 1);
       }
-
+      
+      // OTIMIZAÇÃO: Busca todas as "pastas" de dias disponíveis de uma só vez.
+      const snapLogsRoot = await get(ref(db, 'logs'));
+      const diasDisponiveis = snapLogsRoot.exists() ? Object.keys(snapLogsRoot.val()) : [];
 
       const dadosProcessados: DadoDiario[] = [];
 
@@ -88,34 +90,36 @@ export default function HistoricoPage() {
 
         if (snapCache.exists()) {
           const cachedData = snapCache.val();
-          // Garante compatibilidade com a nova estrutura de dados
           delete cachedData.velMin;
           delete cachedData.velMedia;
           dadosProcessados.push(cachedData);
         } else {
-          // Fallback: Processa os logs se não houver cache
-          // ATENÇÃO: Esta é a parte de baixa performance
-          const snapLogs = await get(ref(db, "logs"));
+          // --- NOVA LÓGICA PARA EVITAR DIA INCOMPLETO ---
+          const dataAtual = new Date(dia + "T12:00:00");
+          dataAtual.setDate(dataAtual.getDate() + 1);
+          const diaSeguinte = formatDateForInput(dataAtual);
+
+          // Se o dia seguinte não existe no banco de dados, consideramos o dia atual incompleto.
+          if (!diasDisponiveis.includes(diaSeguinte)) {
+            console.log(`Dia ${dia} ignorado pois o dia seguinte (${diaSeguinte}) não foi encontrado nos logs.`);
+            continue; // Pula para a próxima iteração
+          }
+
+          // --- NOVA LÓGICA DE BUSCA EFICIENTE ---
+          // Busca apenas os logs do dia que sabemos estar completo.
+          const refLogsDoDia = ref(db, `logs/${dia}`);
+          const snapLogs = await get(refLogsDoDia);
+          
           if (!snapLogs.exists()) continue;
 
           const todosDados = snapLogs.val();
-          const registrosDia: DadoHistorico[] = Object.entries(todosDados)
-            .map(([key, value]: [string, any]) => {
-              const timestampMs = Number(key);
-              if (isNaN(timestampMs)) return null;
-              
-              const dataRegistro = new Date(timestampMs);
-              if (formatDateForInput(dataRegistro) === dia) {
-                return {
-                  timestamp: dataRegistro.toISOString(),
-                  temperatura: value.Temperatura,
-                  umidade: value.Umidade,
-                  velocidade: value.Velocidade,
-                };
-              }
-              return null;
-            })
-            .filter((r): r is DadoHistorico => r !== null);
+          const registrosDia: DadoHistorico[] = Object.values(todosDados)
+            .map((value: any) => ({
+              timestamp: value.timestamp,
+              temperatura: value.Temperatura,
+              umidade: value.Umidade,
+              velocidade: value.Velocidade,
+            }));
 
           if (registrosDia.length > 0) {
             const agregado = calcularAgregadoDoDia(dia, registrosDia);
@@ -126,7 +130,7 @@ export default function HistoricoPage() {
       }
 
       if (dadosProcessados.length === 0) {
-        setMensagem("Nenhum dado encontrado no período selecionado.");
+        setMensagem("Nenhum dado encontrado ou todos os dias no período estão incompletos.");
       }
       
       setDadosDiarios(dadosProcessados);
