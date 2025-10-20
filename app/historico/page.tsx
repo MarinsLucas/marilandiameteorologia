@@ -41,33 +41,23 @@ interface DadoDiario {
   velMax: number;
 }
 
+// Helper fora do componente para evitar recriação
+const formatDateForInput = (date: Date) => date.toISOString().split("T")[0];
+
 // --- Componente da Página ---
 export default function HistoricoPage() {
   // --- Estados ---
-  const [dataInicio, setDataInicio] = useState("");
-  const [dataFim, setDataFim] = useState("");
-  const [dadosDiarios, setDadosDiarios] = useState<DadoDiario[]>([]);
-  const [mensagem, setMensagem] = useState("Selecione um período para exibir os dados.");
-  const [carregando, setCarregando] = useState(true); // Inicia carregando
-
-  // --- Funções Auxiliares ---
-  // Função para formatar a data para o input type="date"
-  const formatDateForInput = (date: Date) => date.toISOString().split("T")[0];
-
-  // --- Efeito para Carregar Dados Iniciais (últimos 7 dias) ---
-  useEffect(() => {
-    const hoje = new Date();
+  // Define as datas iniciais para que os inputs já comecem preenchidos, mas não busca os dados.
+  const [dataInicio, setDataInicio] = useState(() => {
     const seteDiasAtras = new Date();
-    seteDiasAtras.setDate(hoje.getDate() - 7);
-
-    const fim = formatDateForInput(hoje);
-    const inicio = formatDateForInput(seteDiasAtras);
-    
-    setDataInicio(inicio);
-    setDataFim(fim);
-
-    buscarDados(inicio, fim);
-  }, []); // O array vazio garante que isso rode apenas uma vez
+    seteDiasAtras.setDate(new Date().getDate() - 7);
+    return formatDateForInput(seteDiasAtras);
+  });
+  const [dataFim, setDataFim] = useState(() => formatDateForInput(new Date()));
+  
+  const [dadosDiarios, setDadosDiarios] = useState<DadoDiario[]>([]);
+  const [mensagem, setMensagem] = useState("Selecione um período e clique em 'Buscar' para ver os gráficos.");
+  const [carregando, setCarregando] = useState(false); // ALTERADO: Não inicia carregando
 
   // --- Lógica de Busca e Processamento de Dados ---
   async function buscarDados(inicio: string, fim: string) {
