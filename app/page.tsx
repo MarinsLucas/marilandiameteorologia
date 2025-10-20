@@ -1,7 +1,21 @@
+// app/page.tsx (ou onde estiver seu AgoraPage)
+
 import Link from "next/link";
 import { getDatabase, ref, get, child } from "firebase/database";
-import { app } from "../lib/firebaseConfig"; // inicializa o app Firebase
+import { app } from "../lib/firebaseConfig";
+import {
+  Thermometer,
+  Wind,
+  Droplets,
+  Sun,
+  Cloud,
+  Cloudy,
+  CloudRain,
+  Moon,
+  Eye, // Ícone para Luminosidade
+} from "lucide-react";
 
+// --- Tipos de dados (sem alterações) ---
 type WeatherData = {
   timestamp: string;
   Luminosidade: number;
@@ -24,17 +38,71 @@ interface DadosMeteorologicos {
 
 export const dynamic = "force-dynamic";
 
+// --- Lógica de avaliação do tempo (sem alterações) ---
+function luxEsperadoPorHora(hora: number): number {
+  const A = 6000;
+  const inicioDia = 6;
+  const fimDia = 18;
+  const periodo = fimDia - inicioDia;
+
+  if (hora < inicioDia || hora > fimDia) return 0;
+
+  const valor = A * Math.sin((Math.PI * (hora - inicioDia)) / periodo);
+  return valor;
+}
+
+type CondicaoTempo =
+  | "Chuvoso"
+  | "De noite"
+  | "Nublado"
+  | "Parcialmente Nublado"
+  | "Ensolarado";
+
+function avaliarCondicaoTempo({
+  luminosidade,
+  chuva,
+  data,
+}: Pick<DadosMeteorologicos, "luminosidade" | "chuva" | "data">): CondicaoTempo {
+  const hora = new Date(data).getHours();
+
+  if (chuva < 4000) return "Chuvoso";
+  if (hora >= 18 || hora < 6) return "De noite"; // Ajustado para um horário mais realista
+  if (luminosidade < luxEsperadoPorHora(hora - 3) / 2) return "Nublado";
+  if (luminosidade < luxEsperadoPorHora(hora - 3) * 0.8)
+    return "Parcialmente Nublado";
+  return "Ensolarado";
+}
+
+// --- Componente de Ícone (NOVO) ---
+// Este componente ajuda a manter o código principal limpo.
+// Ele escolhe o ícone certo com base na condição do tempo.
+const WeatherIcon = ({ condicao, size }: { condicao: CondicaoTempo, size: number }) => {
+  switch (condicao) {
+    case "Ensolarado":
+      return <Sun size={size} className="text-yellow-300" />;
+    case "Parcialmente Nublado":
+      return <Cloudy size={size} className="text-slate-300" />;
+    case "Nublado":
+      return <Cloud size={size} className="text-slate-400" />;
+    case "Chuvoso":
+      return <CloudRain size={size} className="text-blue-300" />;
+    case "De noite":
+      return <Moon size={size} className="text-slate-300" />;
+    default:
+      return <Cloudy size={size} className="text-slate-300" />;
+  }
+};
+
+
 export default async function AgoraPage() {
+  
   const db = getDatabase(app);
-  // --- ÚNICA ALTERAÇÃO LÓGICA ESTÁ AQUI ---
-  // 1. O caminho foi mudado de "logs" para "leitura_atual"
   const snapshot = await get(child(ref(db), "leitura_atual"));
 
   if (!snapshot.exists()) {
     throw new Error("Nenhum dado encontrado.");
   }
 
-  // 2. A lógica para encontrar o último dado foi simplificada, pois agora pegamos o dado diretamente.
   const weatherData = snapshot.val() as WeatherData;
 
   const dados: DadosMeteorologicos = {
@@ -46,134 +114,103 @@ export default async function AgoraPage() {
     data: weatherData.timestamp,
   };
 
-  console.log("Dados do Firebase:", dados);
-
-  const {
-    temperatura,
-    umidade,
-    velocidade,
-    luminosidade,
-    chuva,
-    data,
-  } = dados;
-
-  function luxEsperadoPorHora(hora: number): number {
-    const A = 6000;
-    const inicioDia = 6;
-    const fimDia = 18;
-    const periodo = fimDia - inicioDia;
-
-    if (hora < inicioDia || hora > fimDia) return 0;
-
-    const valor = A * Math.sin((Math.PI * (hora - inicioDia)) / periodo);
-    return valor;
-  }
-
-  function avaliarCondicaoTempo({
-    luminosidade,
-    chuva,
-    data,
-  }: Pick<DadosMeteorologicos, "luminosidade" | "chuva" | "data">): string {
-    const hora = new Date(data).getHours();
-
-    if (chuva < 4000) return "Chuvoso";
-    if (hora >= 22 || hora < 8) return "De noite";
-    if (luminosidade < luxEsperadoPorHora(hora - 3) / 2) return "Nublado";
-    if (luminosidade < luxEsperadoPorHora(hora - 3) * 0.8)
-      return "Parcialmente Nublado";
-    return "Ensolarado";
-  }
-
-  const condicaoTempo = avaliarCondicaoTempo({ luminosidade, chuva, data });
+  const condicaoTempo = avaliarCondicaoTempo(dados);
 
   return (
-    <div className="min-h-screen bg-purple-700 text-white p-6 flex flex-col items-center">
-      {/* Cabeçalho */}
-      <header className="w-full max-w-4xl flex justify-between items-center bg-purple-800 p-4 rounded-lg shadow-md mb-6">
-        <h1 className="text-2xl font-bold">1.6v</h1>
-        <nav className="flex gap-4">
-          <Link
-            href="/"
-            className="bg-white text-purple-900 px-4 py-2 rounded-lg shadow hover:bg-gray-200 transition"
-          >
+    // NOVO: Fundo com gradiente moderno. Ocupa a tela toda.
+    <div className="min-h-screen w-full bg-gradient-to-br from-gray-900 to-blue-900 text-white p-4 sm:p-6 lg:p-8 flex flex-col items-center">
+      
+      {/* CABEÇALHO: Simplificado e com estilo mais clean */}
+      <header className="w-full max-w-6xl flex justify-between items-center mb-8">
+        <h1 className="text-xl font-bold">Marilândia Meteorologia</h1>
+        <nav className="flex gap-2">
+          <Link href="/" className="bg-white/20 hover:bg-white/30 transition px-4 py-2 rounded-full text-sm">
             Agora
           </Link>
-          <Link
-            href="/historico"
-            className="bg-white text-purple-900 px-4 py-2 rounded-lg shadow hover:bg-gray-200 transition"
-          >
+          <Link href="/historico" className="bg-white/10 hover:bg-white/20 transition px-4 py-2 rounded-full text-sm">
             Histórico
           </Link>
         </nav>
       </header>
 
-      <h1 className="text-4xl font-bold text-center mb-6">
-        Como está o tempo agora no Marilândia?
-      </h1>
-
-      {/* Quadro principal com estado e dados */}
-      <div className="bg-white text-purple-900 rounded-xl shadow-xl w-full max-w-5xl p-6 mb-12 flex flex-col md:flex-row justify-between items-start md:items-center">
-        {/* Estado do tempo */}
-        <div className="mb-6 md:mb-0 md:w-1/2">
-          <h2 className="text-2xl font-semibold mb-2">Tempo agora:</h2>
-          <p className="text-5xl font-bold">{condicaoTempo}</p>
+      {/* Título Principal */}
+      <h2 className="text-2xl sm:text-3xl font-light text-center mb-8">
+        O tempo em Juiz de Fora, agora
+      </h2>
+      
+      {/* CARD PRINCIPAL: Agora com efeito glassmorphism */}
+      <main className="w-full max-w-6xl bg-white/10 backdrop-blur-lg border border-white/20 rounded-3xl p-6 sm:p-8 flex flex-col lg:flex-row gap-8">
+        
+        {/* Lado Esquerdo: Ícone gigante e Condição do Tempo */}
+        <div className="flex flex-col items-center justify-center text-center lg:w-1/3">
+           <WeatherIcon condicao={condicaoTempo} size={120} />
+          <p className="text-4xl font-bold mt-4">{condicaoTempo}</p>
         </div>
+        
+        {/* Lado Direito: Dados principais e secundários */}
+        <div className="flex flex-col justify-center lg:w-2/3">
+            {/* DADOS EM DESTAQUE: Temperatura e Umidade */}
+            <div className="flex flex-col sm:flex-row gap-8 mb-6">
+                <div className="flex items-center gap-4">
+                    <Thermometer className="text-red-400" size={48} />
+                    <div>
+                        <p className="text-slate-300">Temperatura</p>
+                        {/* DESTAQUE: Temperatura com fonte enorme */}
+                        <p className="text-7xl font-bold">{dados.temperatura}°C</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-4">
+                    <Droplets className="text-blue-400" size={48} />
+                    <div>
+                        <p className="text-slate-300">Umidade</p>
+                        {/* DESTAQUE: Umidade com fonte grande */}
+                        <p className="text-5xl font-bold">{dados.umidade}%</p>
+                    </div>
+                </div>
+            </div>
 
-        {/* Dados meteorológicos */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full md:w-1/2">
-          <div>
-            <h3 className="text-lg font-semibold">🌡️ Temperatura</h3>
-            <p className="text-2xl">{temperatura} °C</p>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold">💧 Umidade</h3>
-            <p className="text-2xl">{umidade} %</p>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold">💨 Vento </h3>
-            <p className="text-2xl">{velocidade} m/s</p>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold">🌙 Luminosidade</h3>
-            <p className="text-2xl">{luminosidade} lux</p>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold">🕒 Data da Medição</h3>
-            <p className="text-xl">
-              {new Date(data).toLocaleString("pt-BR", {
-                timeZone: "America/Sao_Paulo",
-              })}
+            {/* DADOS SECUNDÁRIOS: Vento e Luminosidade */}
+            <div className="grid grid-cols-2 gap-6 border-t border-white/20 pt-6">
+                 <div className="flex items-center gap-3">
+                    <Wind size={24} className="text-slate-300" />
+                    <div>
+                        <h3 className="text-sm text-slate-400">Vento</h3>
+                        <p className="text-lg font-semibold">{dados.velocidade} m/s</p>
+                    </div>
+                </div>
+                 <div className="flex items-center gap-3">
+                    <Eye size={24} className="text-slate-300" />
+                    <div>
+                        <h3 className="text-sm text-slate-400">Luminosidade</h3>
+                        <p className="text-lg font-semibold">{dados.luminosidade} lux</p>
+                    </div>
+                </div>
+            </div>
+
+             {/* INFORMAÇÃO MENOS IMPORTANTE: Data, bem discreta */}
+             <div className="text-center mt-8">
+                <p className="text-xs text-slate-400">
+                    Última medição: {new Date(dados.data).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                </p>
+             </div>
+        </div>
+      </main>
+
+      {/* Seção de Previsão (mantida, mas com estilo atualizado) */}
+       <section className="mt-8 w-full max-w-6xl bg-white/10 backdrop-blur-lg border border-white/20 rounded-3xl p-6 sm:p-8">
+            <h2 className="text-2xl font-bold mb-4">Previsão (Em desenvolvimento)</h2>
+            <p className="text-slate-300">
+             Previsão do tempo gerada através de modelagem computacional baseada em
+             dados, logo, não é perfeita e pode conter erros! Gerada através de uma
+             rede neural treinada com 500KB de dados. Tende a melhorar com o tempo.
             </p>
-          </div>
-        </div>
-      </div>
+       </section>
 
-      {/* Linha divisória */}
-      <hr className="border-t-2 border-white w-full max-w-5xl mb-8" />
-
-      {/* Previsão */}
-      <section className="bg-white text-purple-900 rounded-xl shadow-xl w-full max-w-5xl p-6 flex flex-col items-start">
-        <h2 className="text-3xl font-bold mb-4">Previsão do Tempo</h2>
-
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center w-full mb-4 gap-6">
-          <div>
-            <h3 className="text-xl font-semibold">Condição Prevista</h3>
-            <p className="text-2xl">------------</p>
-          </div>
-
-          <div>
-            <h3 className="text-xl font-semibold">Temperatura Esperada</h3>
-            <p className="text-2xl">-------</p>
-          </div>
-        </div>
-
-        <p className="text-md text-gray-700">
-          Previsão do tempo gerada através de modelagem computacional baseada em
-          dados, logo, não é perfeita e pode conter erros! Gerada através de uma
-          rede neural treinada com 500KB de dados. Tende a melhorar com o tempo.
+       <footer className="w-full max-w-6xl text-center mt-8">
+        <p className="text-xs text-slate-500">
+          Marilândia Meteorologia v1.7
         </p>
-      </section>
+      </footer>
     </div>
   );
 }
-
