@@ -38,7 +38,7 @@ export const dynamic = "force-dynamic";
 
 // --- Lógica de avaliação do tempo (sem alterações) ---
 function luxEsperadoPorHora(hora: number): number {
-  const A = 6000;
+  const A = 3262;
   const inicioDia = 6;
   const fimDia = 18;
   const periodo = fimDia - inicioDia;
@@ -61,12 +61,12 @@ function avaliarCondicaoTempo({
   chuva,
   data,
 }: Pick<DadosMeteorologicos, "luminosidade" | "chuva" | "data">): CondicaoTempo {
-  const hora = new Date(data).getHours();
+  const hora = new Date(data).getHours() - 3;
 
   if (chuva < 4000) return "Chuvoso";
   if (hora > 18 || hora < 6) return "De noite";
-  if (luminosidade < luxEsperadoPorHora(hora - 3) / 2) return "Nublado";
-  if (luminosidade < luxEsperadoPorHora(hora - 3) * 0.8)
+  if (luminosidade < luxEsperadoPorHora(hora) / 2) return "Nublado";
+  if (luminosidade < luxEsperadoPorHora(hora) * 0.8)
     return "Parcialmente Nublado";
   return "Ensolarado";
 }

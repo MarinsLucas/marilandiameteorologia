@@ -52,12 +52,12 @@ function avaliarCondicaoTempo({
   chuva,
   data,
 }: Pick<DadosMeteorologicos, "luminosidade" | "chuva" | "data">): CondicaoTempo {
-  const hora = new Date(data).getHours();
+  const hora = new Date(data).getHours() - 3;
 
   if (chuva < 4000) return "Chuvoso";
-  if (hora > 18 || hora < 6) return "De noite";
-  if (luminosidade < luxEsperadoPorHora(hora - 3) / 2) return "Nublado";
-  if (luminosidade < luxEsperadoPorHora(hora - 3) * 0.8)
+  if (hora >= 18 || hora < 6) return "De noite";
+  if (luminosidade < luxEsperadoPorHora(hora) / 2) return "Nublado";
+  if (luminosidade < luxEsperadoPorHora(hora) * 0.8)
     return "Parcialmente Nublado";
   return "Ensolarado";
 }
