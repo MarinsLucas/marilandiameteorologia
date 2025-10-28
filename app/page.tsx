@@ -212,7 +212,7 @@ export default async function AgoraPage() {
                     <div>
                          {/* Texto do rótulo mais brilhante */}
                         <h3 className="text-sm text-slate-200">Vento</h3>
-                        <p className="text-lg font-semibold">{dados.velocidade} m/s</p>
+                        <p className="text-lg font-semibold">{dados.velocidade} km/h</p>
                     </div>
                 </div>
                  <div className="flex items-center gap-3">

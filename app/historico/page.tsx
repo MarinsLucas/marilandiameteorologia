@@ -288,7 +288,7 @@ export default function HistoricoPage() {
                 <Line options={chartOptions} data={umidadeData} />
             </div>
             <div className="lg:col-span-2 bg-white/10 backdrop-blur-lg border border-white/20 rounded-3xl p-4 sm:p-6 h-96">
-                <h3 className="text-lg font-semibold text-center text-slate-200 mb-4 flex items-center justify-center gap-2"><Wind size={20}/> Velocidade Máxima do Vento (m/s)</h3>
+                <h3 className="text-lg font-semibold text-center text-slate-200 mb-4 flex items-center justify-center gap-2"><Wind size={20}/> Velocidade Máxima do Vento (km/h)</h3>
                 <Line options={chartOptions} data={velocidadeData} />
             </div>
           </div>
