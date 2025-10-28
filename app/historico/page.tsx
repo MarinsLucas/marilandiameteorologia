@@ -15,7 +15,9 @@ import {
   ChartOptions,
   Colors,
 } from "chart.js";
-import { getDatabase, ref, get, set } from "firebase/database";
+// --- OTIMIZAÇÃO ---
+// Importar o tipo 'Database' para usar na função helper
+import { getDatabase, ref, get, set, Database } from "firebase/database";
 import { app } from "@/lib/firebaseConfig";
 import { Thermometer, Droplets, Wind, CalendarDays, LoaderCircle } from "lucide-react";
 
@@ -44,6 +46,30 @@ interface DadoDiario {
 // Helper fora do componente para evitar recriação
 const formatDateForInput = (date: Date) => date.toISOString().split("T")[0];
 
+// --- OTIMIZAÇÃO: Mover função de cálculo pura para fora do componente ---
+function calcularAgregadoDoDia(dia: string, registros: DadoHistorico[]): DadoDiario {
+  const getValidos = (campo: keyof Omit<DadoHistorico, 'timestamp'>) =>
+    registros.map(r => Number(r[campo])).filter(v => !isNaN(v) && v !== -404);
+
+  const temps = getValidos("temperatura");
+  const umids = getValidos("umidade");
+  const vels = getValidos("velocidade");
+  
+  const media = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
+  return {
+    dia,
+    tempMax: temps.length ? Math.max(...temps) : 0,
+    tempMin: temps.length ? Math.min(...temps) : 0,
+    tempMedia: temps.length ? parseFloat(media(temps).toFixed(1)) : 0,
+    umidMax: umids.length ? Math.max(...umids) : 0,
+    umidMin: umids.length ? Math.min(...umids) : 0,
+    umidMedia: umids.length ? parseFloat(media(umids).toFixed(1)) : 0,
+    velMax: vels.length ? Math.max(...vels) : 0,
+  };
+}
+
+
 // --- Componente da Página ---
 export default function HistoricoPage() {
   // --- Estados ---
@@ -58,7 +84,7 @@ export default function HistoricoPage() {
   const [mensagem, setMensagem] = useState("Selecione um período e clique em 'Buscar' para ver os gráficos.");
   const [carregando, setCarregando] = useState(false);
 
-  // --- Lógica de Busca e Processamento de Dados ---
+  // --- OTIMIZAÇÃO: Lógica de Busca e Processamento de Dados reestruturada ---
   async function buscarDados(inicio: string, fim: string) {
     if (!inicio || !fim) return;
     
@@ -78,56 +104,66 @@ export default function HistoricoPage() {
         currentDate.setDate(currentDate.getDate() + 1);
       }
       
-      // OTIMIZAÇÃO: Busca todas as "pastas" de dias disponíveis de uma só vez.
+      // Busca única dos dias disponíveis (como antes, isso está bom)
       const snapLogsRoot = await get(ref(db, 'logs'));
       const diasDisponiveis = snapLogsRoot.exists() ? Object.keys(snapLogsRoot.val()) : [];
 
-      const dadosProcessados: DadoDiario[] = [];
-
-      for (const dia of dias) {
+      // --- OTIMIZAÇÃO: Helper de processamento de dia individual ---
+      // Esta função será executada em paralelo para cada dia
+      async function processarUmDia(dia: string): Promise<DadoDiario | null> {
         const refCache = ref(db, `historicoDiario/${dia}`);
         const snapCache = await get(refCache);
 
         if (snapCache.exists()) {
           const cachedData = snapCache.val();
+          // Lógica para lidar com dados antigos que podem ter velMin/velMedia
           delete cachedData.velMin;
           delete cachedData.velMedia;
-          dadosProcessados.push(cachedData);
-        } else {
-          // --- NOVA LÓGICA PARA EVITAR DIA INCOMPLETO ---
-          const dataAtual = new Date(dia + "T12:00:00");
-          dataAtual.setDate(dataAtual.getDate() + 1);
-          const diaSeguinte = formatDateForInput(dataAtual);
-
-          // Se o dia seguinte não existe no banco de dados, consideramos o dia atual incompleto.
-          if (!diasDisponiveis.includes(diaSeguinte)) {
-            console.log(`Dia ${dia} ignorado pois o dia seguinte (${diaSeguinte}) não foi encontrado nos logs.`);
-            continue; // Pula para a próxima iteração
-          }
-
-          // --- NOVA LÓGICA DE BUSCA EFICIENTE ---
-          // Busca apenas os logs do dia que sabemos estar completo.
-          const refLogsDoDia = ref(db, `logs/${dia}`);
-          const snapLogs = await get(refLogsDoDia);
-          
-          if (!snapLogs.exists()) continue;
-
-          const todosDados = snapLogs.val();
-          const registrosDia: DadoHistorico[] = Object.values(todosDados)
-            .map((value: any) => ({
-              timestamp: value.timestamp,
-              temperatura: value.Temperatura,
-              umidade: value.Umidade,
-              velocidade: value.Velocidade,
-            }));
-
-          if (registrosDia.length > 0) {
-            const agregado = calcularAgregadoDoDia(dia, registrosDia);
-            dadosProcessados.push(agregado);
-            await set(refCache, agregado); // Salva no cache para futuras requisições
-          }
+          return cachedData;
         }
+
+        // --- Lógica para pular dia incompleto (como antes) ---
+        const dataAtual = new Date(dia + "T12:00:00");
+        dataAtual.setDate(dataAtual.getDate() + 1);
+        const diaSeguinte = formatDateForInput(dataAtual);
+
+        if (!diasDisponiveis.includes(diaSeguinte)) {
+          console.log(`Dia ${dia} ignorado (incompleto) pois ${diaSeguinte} não existe.`);
+          return null; // Pula este dia
+        }
+
+        // --- Busca e processamento (como antes) ---
+        const refLogsDoDia = ref(db, `logs/${dia}`);
+        const snapLogs = await get(refLogsDoDia);
+        
+        if (!snapLogs.exists()) return null;
+
+        const todosDados = snapLogs.val();
+        const registrosDia: DadoHistorico[] = Object.values(todosDados)
+          .map((value: any) => ({
+            timestamp: value.timestamp,
+            temperatura: value.Temperatura,
+            umidade: value.Umidade,
+            velocidade: value.Velocidade,
+          }));
+
+        if (registrosDia.length > 0) {
+          const agregado = calcularAgregadoDoDia(dia, registrosDia);
+          await set(refCache, agregado); // Salva no cache
+          return agregado;
+        }
+        
+        return null; // Nenhum registro encontrado
       }
+      // --- FIM DA OTIMIZAÇÃO: Helper ---
+
+      // --- OTIMIZAÇÃO: Executa todas as buscas em paralelo ---
+      const promessas = dias.map(processarUmDia);
+      const resultados = await Promise.all(promessas);
+      
+      // Filtra os dias que foram pulados (retornaram null)
+      const dadosProcessados = resultados.filter(d => d !== null) as DadoDiario[];
+      // --- FIM DA OTIMIZAÇÃO: Paralelização ---
 
       if (dadosProcessados.length === 0) {
         setMensagem("Nenhum dado encontrado ou todos os dias no período estão incompletos.");
@@ -143,29 +179,7 @@ export default function HistoricoPage() {
     }
   }
 
-  function calcularAgregadoDoDia(dia: string, registros: DadoHistorico[]): DadoDiario {
-    const getValidos = (campo: keyof Omit<DadoHistorico, 'timestamp'>) =>
-      registros.map(r => Number(r[campo])).filter(v => !isNaN(v) && v !== -404);
-
-    const temps = getValidos("temperatura");
-    const umids = getValidos("umidade");
-    const vels = getValidos("velocidade");
-    
-    const media = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
-
-    return {
-      dia,
-      tempMax: temps.length ? Math.max(...temps) : 0,
-      tempMin: temps.length ? Math.min(...temps) : 0,
-      tempMedia: temps.length ? parseFloat(media(temps).toFixed(1)) : 0,
-      umidMax: umids.length ? Math.max(...umids) : 0,
-      umidMin: umids.length ? Math.min(...umids) : 0,
-      umidMedia: umids.length ? parseFloat(media(umids).toFixed(1)) : 0,
-      velMax: vels.length ? Math.max(...vels) : 0,
-    };
-  }
-
-  // --- Configurações dos Gráficos ---
+  // --- Configurações dos Gráficos (Sem alterações) ---
   const chartOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -224,7 +238,7 @@ export default function HistoricoPage() {
     ],
   };
 
-  // --- JSX ---
+  // --- JSX (Sem alterações) ---
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-gray-900 to-blue-900 text-white p-4 sm:p-6 lg:p-8 flex flex-col items-center">
       <header className="w-full max-w-7xl flex justify-between items-center mb-8">
@@ -287,4 +301,3 @@ export default function HistoricoPage() {
     </div>
   );
 }
-
